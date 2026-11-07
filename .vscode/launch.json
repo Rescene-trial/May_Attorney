@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "게임 디버그 (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5500/index.html",
+      "webRoot": "${workspaceFolder}"
+    },
+    {
+      "name": "게임 디버그 (Edge)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5500/index.html",
+      "webRoot": "${workspaceFolder}"
+    }
+  ]
+}

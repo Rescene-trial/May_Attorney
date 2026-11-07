@@ -1,0 +1,9 @@
+{
+  "liveServer.settings.port": 5500,
+  "liveServer.settings.root": "/",
+  "liveServer.settings.file": "index.html",
+  "files.encoding": "utf8",
+  "files.associations": {
+    "text/*.txt": "plaintext"
+  }
+}
