@@ -13,6 +13,7 @@ const CONFIG = {
   TYPE_SPEED: 30,               // 글자 출력 속도(ms)
   TALK_FRAME_MS: 120,           // 입 움직임 프레임 간격(ms)
   MAX_HP: 5,                    // 재판 신뢰도
+  PLAYER: '메이',                // 플레이어 캐릭터 (@player hide 상태에선 그림을 띄우지 않음)
   SAVE_KEY: 'may_attorney_save_v1',
 };
 
@@ -23,6 +24,7 @@ function resetState() {
     scene: null, lines: [], labels: {}, idx: 0,
     evidence: [],            // { id, name, desc }
     hp: CONFIG.MAX_HP, hpVisible: false,
+    playerVisible: false,    // false: 플레이어 시점 (메이 그림 안 보임)
     stack: [],               // @return 으로 돌아갈 지점
     cross: null,             // 반대신문 상태
     crossActive: false,
@@ -147,7 +149,8 @@ function run() {
 
 function exec({ cmd, arg }) {
   switch (cmd) {
-    case 'bg':        setBg(arg); return false;
+    case 'bg':        hideChar(); setBg(arg); return false;   // 장소가 바뀌면 캐릭터도 지움
+    case 'player':    playerCmd(arg); return false;
     case 'show': {
       const [who, face] = arg.split('|').map(s => s.trim());
       showChar(who, face || 'normal');
@@ -188,7 +191,9 @@ function say(l, testimony = false) {
   const thought = l.text.startsWith('(');
   $('name').textContent = l.who;
   $('line').className = testimony ? 'testimony' : thought ? 'thought' : '';
-  if (l.who) showChar(l.who, l.face);
+  // 플레이어 시점일 때 메이가 말하면 그림을 바꾸지 않고 대화 상대를 그대로 보여줌
+  const hidePlayer = l.who === CONFIG.PLAYER && !G.playerVisible;
+  if (l.who && !hidePlayer) showChar(l.who, l.face);
   startTyping(l.text, l.who && !thought ? l.who : null);
   G.log.push({ who: l.who, text: l.text });
   if (G.log.length > 500) G.log.shift();
@@ -276,6 +281,13 @@ async function showChar(who, face) {
     ph.style.setProperty('--c', `hsl(${hue(who)}, 45%, 42%)`);
   }
   $('char').hidden = false;
+}
+
+// @player show : 플레이어도 화면에 나옴 (법정)
+// @player hide : 플레이어 시점 - 메이가 말해도 상대방 그림 유지 (일상 대화)
+function playerCmd(arg) {
+  G.playerVisible = arg === 'show';
+  if (!G.playerVisible && G.char && G.char.who === CONFIG.PLAYER) hideChar();
 }
 
 function hideChar() {
@@ -630,7 +642,7 @@ function autosave(target) {
   if (CONFIG.NO_SAVE_SCENES.includes(G.scene)) return;
   try {
     localStorage.setItem(CONFIG.SAVE_KEY, JSON.stringify({
-      target, evidence: G.evidence, hp: G.hp, hpVisible: G.hpVisible,
+      target, evidence: G.evidence, hp: G.hp, hpVisible: G.hpVisible, playerVisible: G.playerVisible,
     }));
   } catch (e) { /* 저장 불가 환경 */ }
 }
@@ -668,6 +680,7 @@ function startGame(save) {
     G.evidence = save.evidence || [];
     G.hp = save.hp ?? CONFIG.MAX_HP;
     G.hpVisible = !!save.hpVisible;
+    G.playerVisible = !!save.playerVisible;
   }
   renderHp();
   $('title-screen').hidden = true;

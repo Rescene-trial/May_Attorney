@@ -83,7 +83,8 @@ python -m http.server 8000
 
 | 명령어 | 설명 |
 |---|---|
-| `@bg office` | 배경 변경 → `img/bg/office.png` (`@bg none`: 검은 화면) |
+| `@bg office` | 배경 변경 → `img/bg/office.png` (`@bg none`: 검은 화면). 장소가 바뀌므로 캐릭터도 지워짐 |
+| `@player hide` / `@player show` | 플레이어 시점 / 법정 모드 (아래 설명) |
 | `@show 김만수\|normal` / `@hide` | 대사 없이 캐릭터 표시 / 숨기기 |
 | `@title 5월 7일 / 지방법원` | 날짜·장소 카드 (`/`는 줄바꿈) |
 | `@bgm trial` / `@bgm stop` | 배경음악 재생 / 정지 → `audio/bgm/trial.mp3` |
@@ -101,6 +102,13 @@ python -m http.server 8000
 | `@return` | 추궁·오답 장면이 끝나고 원래 자리로 돌아감 |
 | `@end 다음 화에 계속` | 끝 문구 표시 후 타이틀로 |
 | `@totitle` | 바로 타이틀로 |
+
+### 플레이어 시점
+
+- 기본은 **플레이어 시점(`@player hide`)** 입니다. 메이가 말해도 메이 그림은 나오지 않고,
+  **대화 상대의 그림이 그대로 유지**되어 플레이어가 직접 상대와 대화하는 느낌을 줍니다.
+- 법정에서는 `@player show` 로 바꿔서 메이도 화면에 나오게 합니다. (`scene04_trial.txt` 참고)
+- 플레이어 캐릭터 이름은 `js/engine.js` 의 `CONFIG.PLAYER` 에서 바꿀 수 있습니다.
 
 ### 반대신문
 
@@ -135,7 +143,7 @@ python -m http.server 8000
 
 | 캐릭터 | 사용하는 표정 |
 |---|---|
-| 메이 | normal, nervous, thinking, serious, confident, shock, smile |
+| 메이 | nervous, confident, serious, shock (법정 장면에서만 쓰임) |
 | 선배 | normal, smile |
 | 박지호 | normal, sad, thinking, shock |
 | 재판장 | normal, serious |
