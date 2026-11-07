@@ -4,203 +4,94 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>May Attorney</title>
-<style>
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
-  body {
-    font-family: "Pretendard", "Malgun Gothic", sans-serif;
-    background: #1d2333 center / cover no-repeat;
-    overflow: hidden; user-select: none;
-  }
-  #stage { position: relative; width: 100%; height: 100%; }
-  #portrait {
-    position: absolute; bottom: 180px; left: 50%; transform: translateX(-50%);
-    max-height: 60vh; display: none;
-  }
-  #box {
-    position: absolute; left: 20px; right: 20px; bottom: 20px; min-height: 140px;
-    background: rgba(0,0,0,.78); color: #fff; border: 2px solid #ffffff55;
-    border-radius: 10px; padding: 16px 20px; cursor: pointer; font-size: 18px; line-height: 1.6;
-  }
-  #name { font-weight: bold; color: #ffd36b; margin-bottom: 6px; min-height: 1.4em; }
-  #next { position: absolute; right: 16px; bottom: 10px; animation: blink 1s infinite; display: none; }
-  @keyframes blink { 50% { opacity: 0; } }
-  #choices {
-    position: absolute; left: 50%; top: 35%; transform: translate(-50%, -50%);
-    display: flex; flex-direction: column; gap: 12px; width: min(420px, 90%);
-  }
-  #choices button {
-    padding: 14px; font-size: 17px; border-radius: 8px; border: 2px solid #ffd36b;
-    background: rgba(20,24,40,.92); color: #fff; cursor: pointer;
-  }
-  #choices button:hover { background: #ffd36b; color: #000; }
-  #error {
-    position: absolute; top: 10px; left: 10px; right: 10px; color: #ff8080;
-    background: #000c; padding: 10px; display: none; white-space: pre-wrap;
-  }
-</style>
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div id="stage">
-  <img id="portrait" alt="">
+  <!-- 배경 / 캐릭터 -->
+  <div id="bg"><span id="bg-label"></span></div>
+  <div id="char" hidden>
+    <img id="char-img" alt="" hidden>
+    <div id="char-ph" hidden>
+      <div class="ph-name"></div>
+      <div class="ph-face"></div>
+      <div class="ph-mouth"></div>
+    </div>
+  </div>
+  <div id="flash"></div>
+
+  <!-- 상단 UI -->
+  <div id="hud">
+    <div id="hp" hidden></div>
+    <div id="menu">
+      <button id="btn-evidence" title="E">법정기록</button>
+      <button id="btn-log" title="L">대사기록</button>
+    </div>
+  </div>
+  <div id="testimony-title" hidden></div>
+  <div id="toast" hidden></div>
+
+  <!-- 선택지 / 반대신문 -->
   <div id="choices"></div>
+  <div id="cross-bar" hidden>
+    <button id="cross-prev" title="←">◀</button>
+    <button id="cross-press">추궁하기</button>
+    <button id="cross-present">증거 제시</button>
+    <button id="cross-next" title="→">▶</button>
+  </div>
+
+  <!-- 대사창 -->
   <div id="box">
     <div id="name"></div>
     <div id="line"></div>
-    <div id="next">▼</div>
+    <div id="next-mark" hidden>▼</div>
   </div>
-  <div id="error"></div>
+
+  <!-- 연출 -->
+  <div id="banner" hidden></div>
+  <div id="card" hidden></div>
+
+  <!-- 법정기록 -->
+  <div id="evidence-modal" class="modal" hidden>
+    <div class="panel">
+      <h2 id="ev-heading">법정기록</h2>
+      <div class="ev-layout">
+        <ul id="ev-list"></ul>
+        <div id="ev-detail">
+          <div id="ev-pic"></div>
+          <h3 id="ev-name"></h3>
+          <p id="ev-desc"></p>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button id="ev-present" class="primary">제시하기</button>
+        <button id="ev-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 대사기록 -->
+  <div id="log-modal" class="modal" hidden>
+    <div class="panel">
+      <h2>대사기록</h2>
+      <ol id="log-list"></ol>
+      <div class="modal-buttons"><button id="log-close">닫기</button></div>
+    </div>
+  </div>
+
+  <!-- 타이틀 -->
+  <div id="title-screen">
+    <h1>May Attorney</h1>
+    <p class="subtitle">메이 변호사의 첫 번째 재판</p>
+    <div class="title-buttons">
+      <button id="btn-new" class="primary">새 게임</button>
+      <button id="btn-continue">이어하기</button>
+    </div>
+    <p class="hint">클릭 / Space: 진행 · E: 법정기록 · L: 대사기록 · ←→: 증언 이동</p>
+  </div>
+
+  <div id="error" hidden></div>
 </div>
-
-<script>
-// ===== 설정 =====
-const TEXT_DIR = 'text/';          // 대사 파일 폴더
-const START_SCENE = 'scene01';     // 시작 장면
-const TYPE_SPEED = 30;             // 글자 출력 속도(ms)
-
-// ===== 상태 =====
-let lines = [];
-let idx = 0;
-let typing = null;       // 타이핑 타이머
-let fullText = '';
-let waitingChoice = false;
-const cache = {};        // 한 번 읽은 장면은 다시 받지 않음
-
-const $ = id => document.getElementById(id);
-
-// ===== 대사 파일 파싱 =====
-// "캐릭터|표정: 대사" / "캐릭터: 대사" / "@명령 인자" / "# 주석"
-function parse(text) {
-  return text.split(/\r?\n/)
-    .map(s => s.trim())
-    .filter(s => s && !s.startsWith('#'))
-    .map(s => {
-      if (s.startsWith('@')) {
-        const sp = s.indexOf(' ');
-        const cmd = sp < 0 ? s.slice(1) : s.slice(1, sp);
-        const arg = sp < 0 ? '' : s.slice(sp + 1).trim();
-        return { type: 'cmd', cmd, arg };
-      }
-      const m = s.match(/^([^:|]+?)(?:\|([^:]+?))?\s*:\s*(.*)$/);
-      if (!m) return { type: 'say', who: '', face: '', text: s }; // 이름 없는 서술
-      return { type: 'say', who: m[1].trim(), face: (m[2] || 'normal').trim(), text: m[3] };
-    });
-}
-
-async function loadScene(name) {
-  try {
-    if (!cache[name]) {
-      const res = await fetch(TEXT_DIR + name + '.txt');
-      if (!res.ok) throw new Error(`${TEXT_DIR}${name}.txt 을(를) 찾을 수 없습니다 (${res.status})`);
-      cache[name] = parse(await res.text());
-    }
-    lines = cache[name];
-    idx = 0;
-    next();
-  } catch (e) {
-    showError(e.message + (location.protocol === 'file:'
-      ? '\n\nindex.html을 더블클릭으로 열면 대사 파일을 읽을 수 없습니다.\n로컬 서버(예: python -m http.server)로 열어 주세요.'
-      : ''));
-  }
-}
-
-// ===== 진행 =====
-function next() {
-  if (waitingChoice) return;
-  if (typing) { finishTyping(); return; }   // 타이핑 중 클릭 → 즉시 전체 표시
-
-  while (idx < lines.length) {
-    const l = lines[idx++];
-    if (l.type === 'cmd') {
-      if (runCommand(l)) return;   // true면 진행 멈춤
-      continue;
-    }
-    say(l);
-    return;
-  }
-}
-
-function runCommand({ cmd, arg }) {
-  switch (cmd) {
-    case 'bg':
-      document.body.style.backgroundImage = `url("img/bg/${arg}.png")`;
-      return false;
-    case 'goto':
-      loadScene(arg);
-      return true;
-    case 'choice':
-      showChoices(arg);
-      return true;
-    case 'end':
-      $('name').textContent = '';
-      $('line').textContent = '— 끝 —';
-      $('next').style.display = 'none';
-      return true;
-    default:
-      console.warn('알 수 없는 명령어:', cmd);
-      return false;
-  }
-}
-
-function say({ who, face, text }) {
-  $('name').textContent = who;
-  $('next').style.display = 'none';
-
-  const img = $('portrait');
-  if (who) {
-    img.onerror = () => { img.style.display = 'none'; };   // 이미지가 없으면 숨김
-    img.onload  = () => { img.style.display = 'block'; };
-    img.src = `img/char/${who}_${face}.png`;
-  } else {
-    img.style.display = 'none';
-  }
-
-  fullText = text;
-  let i = 0;
-  $('line').textContent = '';
-  typing = setInterval(() => {
-    $('line').textContent = fullText.slice(0, ++i);
-    if (i >= fullText.length) finishTyping();
-  }, TYPE_SPEED);
-}
-
-function finishTyping() {
-  clearInterval(typing);
-  typing = null;
-  $('line').textContent = fullText;
-  $('next').style.display = 'block';
-}
-
-function showChoices(arg) {
-  waitingChoice = true;
-  const box = $('choices');
-  box.innerHTML = '';
-  arg.split('|').forEach(part => {
-    const [label, target] = part.split('=').map(s => s.trim());
-    const btn = document.createElement('button');
-    btn.textContent = label;
-    btn.onclick = e => {
-      e.stopPropagation();
-      box.innerHTML = '';
-      waitingChoice = false;
-      loadScene(target);
-    };
-    box.appendChild(btn);
-  });
-}
-
-function showError(msg) {
-  $('error').textContent = msg;
-  $('error').style.display = 'block';
-}
-
-// ===== 입력 =====
-$('box').addEventListener('click', next);
-document.addEventListener('keydown', e => {
-  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); next(); }
-});
-
-loadScene(START_SCENE);
-</script>
+<script src="js/engine.js"></script>
 </body>
 </html>

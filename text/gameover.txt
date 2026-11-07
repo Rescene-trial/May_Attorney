@@ -1,0 +1,15 @@
+# 게임오버 - 재판 중 HP(신뢰도)가 0이 되면 이 장면으로 온다
+@bgm stop
+@hp hide
+@bg none
+@flash red
+재판장|serious: 변호인의 주장에는 더 이상 신뢰할 근거가 없군요.
+재판장|serious: 판결을 내리겠습니다. 피고인 박지호에게... 유죄를 선고합니다.
+메이|shock: 그럴 수가...
+@choice 재판 처음부터 다시=#retry | 타이틀로=#title
+
+*retry
+@goto scene04_trial
+
+*title
+@totitle

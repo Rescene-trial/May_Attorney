@@ -1,0 +1,723 @@
+'use strict';
+/*
+ * May Attorney - 대사 파일 기반 비주얼노벨 / 법정 게임 엔진
+ * 대사 파일 작성법은 README.md 를 참고하세요.
+ */
+
+/* ===================== 설정 ===================== */
+const CONFIG = {
+  TEXT_DIR: 'text/',            // 대사 파일 폴더
+  START_SCENE: 'scene01',       // 새 게임 시작 장면
+  GAMEOVER_SCENE: 'gameover',   // HP가 0이 되면 가는 장면
+  NO_SAVE_SCENES: ['gameover'], // 자동 저장하지 않는 장면
+  TYPE_SPEED: 30,               // 글자 출력 속도(ms)
+  TALK_FRAME_MS: 120,           // 입 움직임 프레임 간격(ms)
+  MAX_HP: 5,                    // 재판 신뢰도
+  SAVE_KEY: 'may_attorney_save_v1',
+};
+
+/* ===================== 상태 ===================== */
+const G = {};
+function resetState() {
+  Object.assign(G, {
+    scene: null, lines: [], labels: {}, idx: 0,
+    evidence: [],            // { id, name, desc }
+    hp: CONFIG.MAX_HP, hpVisible: false,
+    stack: [],               // @return 으로 돌아갈 지점
+    cross: null,             // 반대신문 상태
+    crossActive: false,
+    presentReq: null,        // @present 요청
+    busy: false, loading: false, choosing: false, ended: false,
+    char: null, log: [],
+  });
+}
+resetState();
+
+const sceneCache = {};
+const typing = { timer: null, full: '', i: 0, talker: null };
+const $ = id => document.getElementById(id);
+
+/* ===================== 대사 파일 파싱 ===================== */
+// # 주석 / *라벨 / @명령 인자 / 캐릭터|표정: 대사 [press=#라벨] [present=증거:#라벨]
+function parseScene(text) {
+  const lines = [], labels = {};
+  for (const raw of text.split(/\r?\n/)) {
+    const s = raw.trim();
+    if (!s || s.startsWith('#')) continue;
+    if (s.startsWith('*')) { labels[s.slice(1).trim()] = lines.length; continue; }
+    if (s.startsWith('@')) {
+      const sp = s.search(/\s/);
+      lines.push({
+        type: 'cmd',
+        cmd: (sp < 0 ? s.slice(1) : s.slice(1, sp)).toLowerCase(),
+        arg: sp < 0 ? '' : s.slice(sp + 1).trim(),
+      });
+      continue;
+    }
+    lines.push(parseSay(s));
+  }
+  return { lines, labels };
+}
+
+function parseSay(s) {
+  let press = null, m;
+  const present = {};
+  while ((m = s.match(/\s*\[(\w+)\s*=\s*([^\]]*)\]\s*$/))) {
+    const key = m[1].toLowerCase(), val = m[2].trim();
+    if (key === 'press') press = val;
+    if (key === 'present') {
+      const c = val.indexOf(':');
+      if (c > 0) present[val.slice(0, c).trim()] = val.slice(c + 1).trim();
+    }
+    s = s.slice(0, m.index);
+  }
+  m = s.match(/^([^:|]*?)(?:\|([^:]*?))?\s*:\s*(.*)$/);
+  if (!m) return { type: 'say', who: '', face: '', text: s, press, present };
+  return { type: 'say', who: m[1].trim(), face: (m[2] || '').trim() || 'normal', text: m[3], press, present };
+}
+
+/* ===================== 장면 이동 ===================== */
+async function fetchScene(name) {
+  if (!sceneCache[name]) {
+    const res = await fetch(CONFIG.TEXT_DIR + encodeURIComponent(name) + '.txt', { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`${CONFIG.TEXT_DIR}${name}.txt 을(를) 찾을 수 없습니다 (${res.status})`);
+    sceneCache[name] = parseScene(await res.text());
+  }
+  return sceneCache[name];
+}
+
+// "#라벨" 을 "장면#라벨" 로 바꿈
+const absTarget = (t, scene) => (t.startsWith('#') ? scene + t : t);
+
+// target: "장면" | "#라벨" | "장면#라벨"
+async function jump(target) {
+  G.loading = true;
+  try {
+    target = target.trim();
+    const h = target.indexOf('#');
+    const prevScene = G.scene;
+    let scene = G.scene, label = null;
+    if (h === 0) label = target.slice(1).trim();
+    else if (h > 0) { scene = target.slice(0, h).trim(); label = target.slice(h + 1).trim(); }
+    else scene = target;
+
+    if (h !== 0) {
+      const data = await fetchScene(scene);
+      G.scene = scene; G.lines = data.lines; G.labels = data.labels;
+    }
+    if (label) {
+      if (!(label in G.labels)) throw new Error(`${G.scene}.txt 에 *${label} 라벨이 없습니다`);
+      G.idx = G.labels[label];
+    } else {
+      G.idx = 0;
+    }
+    // 다른 장면으로 넘어갈 때만 자동 저장 (같은 장면 안의 라벨 이동은 저장 안 함)
+    if (h !== 0 && (!label || scene !== prevScene)) autosave(target);
+  } catch (e) {
+    G.loading = false;
+    showError(e.message);
+    return;
+  }
+  G.loading = false;
+  run();
+}
+
+/* ===================== 진행 ===================== */
+function next() {
+  if (G.busy || G.loading || G.choosing || modalOpen() || !$('title-screen').hidden) return;
+  if (typing.timer) { finishTyping(); return; }
+  if (G.ended) { showTitle(); return; }
+  if (G.crossActive) { crossStep(1); return; }
+  run();
+}
+
+function run() {
+  $('next-mark').hidden = true;
+  while (G.idx < G.lines.length) {
+    const l = G.lines[G.idx++];
+    if (l.type === 'cmd') {
+      if (exec(l)) return;   // true: 진행을 멈추고 기다림
+      continue;
+    }
+    say(l);
+    return;
+  }
+  showError(`${G.scene}.txt 가 @goto 나 @end 없이 끝났습니다.`);
+}
+
+function exec({ cmd, arg }) {
+  switch (cmd) {
+    case 'bg':        setBg(arg); return false;
+    case 'show': {
+      const [who, face] = arg.split('|').map(s => s.trim());
+      showChar(who, face || 'normal');
+      return false;
+    }
+    case 'hide':      hideChar(); return false;
+    case 'bgm':       playBgm(arg); return false;
+    case 'se':        playSe(arg); return false;
+    case 'shake':     shake(arg === 'big'); return false;
+    case 'flash':     flash(arg || 'white'); return false;
+    case 'evidence':  evidenceCmd(arg); return false;
+    case 'hp':        hpCmd(arg); return false;
+    case 'penalty':   return penalty(parseInt(arg, 10) || 1);
+    case 'wait':      pause(parseInt(arg, 10) || 500, run); return true;
+    case 'title':     showCard(arg); return true;
+    case 'objection': showBanner(arg || '이의 있음!', false, run); return true;
+    case 'goto':      jump(arg); return true;
+    case 'choice':    showChoices(arg); return true;
+    case 'cross':     startCross(arg); return true;
+    case 'endcross':  return false;
+    case 'present':   askPresent(arg); return true;
+    case 'return':    doReturn(); return true;
+    case 'totitle':   showTitle(); return true;
+    case 'end':       endGame(arg); return true;
+    default:
+      console.warn(`[${G.scene}] 알 수 없는 명령어: @${cmd}`);
+      return false;
+  }
+}
+
+function pause(ms, fn) {
+  G.busy = true;
+  setTimeout(() => { G.busy = false; fn(); }, ms);
+}
+
+/* ===================== 대사 출력 ===================== */
+function say(l, testimony = false) {
+  const thought = l.text.startsWith('(');
+  $('name').textContent = l.who;
+  $('line').className = testimony ? 'testimony' : thought ? 'thought' : '';
+  if (l.who) showChar(l.who, l.face);
+  startTyping(l.text, l.who && !thought ? l.who : null);
+  G.log.push({ who: l.who, text: l.text });
+  if (G.log.length > 500) G.log.shift();
+}
+
+function startTyping(text, talker) {
+  clearInterval(typing.timer);
+  Object.assign(typing, { full: text, i: 0, talker });
+  $('line').textContent = '';
+  $('next-mark').hidden = true;
+  if (!text) { finishTyping(); return; }
+  typing.timer = setInterval(() => {
+    $('line').textContent = text.slice(0, ++typing.i);
+    if (typing.i >= text.length) finishTyping();
+  }, CONFIG.TYPE_SPEED);
+}
+
+function finishTyping() {
+  clearInterval(typing.timer);
+  typing.timer = null;
+  $('line').textContent = typing.full;
+  $('next-mark').hidden = G.crossActive;
+}
+
+/* ===================== 이미지 ===================== */
+const imgCache = {};
+function imageExists(url) {
+  if (!(url in imgCache)) {
+    imgCache[url] = new Promise(resolve => {
+      const im = new Image();
+      im.onload = () => resolve(true);
+      im.onerror = () => resolve(false);
+      im.src = url;
+    });
+  }
+  return imgCache[url];
+}
+
+function hue(str) {
+  let h = 0;
+  for (const ch of str) h = (h * 31 + ch.codePointAt(0)) % 360;
+  return h;
+}
+
+let bgReq = 0;
+async function setBg(name) {
+  const req = ++bgReq, el = $('bg'), label = $('bg-label');
+  if (!name || name === 'none' || name === 'black') {
+    el.style.backgroundImage = ''; el.style.backgroundColor = '#000'; label.textContent = '';
+    return;
+  }
+  const url = `img/bg/${name}.png`;
+  const ok = await imageExists(url);
+  if (req !== bgReq) return;
+  if (ok) {
+    el.style.backgroundImage = `url("${url}")`;
+    label.textContent = '';
+  } else {
+    el.style.backgroundImage = '';
+    el.style.backgroundColor = `hsl(${hue(name)}, 28%, 20%)`;
+    label.textContent = `배경: ${name} (img/bg/${name}.png 없음)`;
+  }
+}
+
+// 캐릭터: img/char/이름_표정.png  (말하는 프레임: 이름_표정_talk.png)
+// 이미지가 없으면 이름/표정이 적힌 임시 실루엣을 보여줌
+let charReq = 0;
+async function showChar(who, face) {
+  if (G.char && G.char.who === who && G.char.face === face && !$('char').hidden) return;
+  const req = ++charReq;
+  const base = `img/char/${who}_${face}.png`;
+  const talk = `img/char/${who}_${face}_talk.png`;
+  const [hasBase, hasTalk] = await Promise.all([imageExists(base), imageExists(talk)]);
+  if (req !== charReq) return;
+
+  G.char = { who, face, base: hasBase ? base : null, talk: hasBase && hasTalk ? talk : null };
+  const img = $('char-img'), ph = $('char-ph');
+  if (hasBase) {
+    img.setAttribute('src', base);
+    img.hidden = false; ph.hidden = true;
+  } else {
+    img.hidden = true; ph.hidden = false;
+    ph.querySelector('.ph-name').textContent = who;
+    ph.querySelector('.ph-face').textContent = face;
+    ph.style.setProperty('--c', `hsl(${hue(who)}, 45%, 42%)`);
+  }
+  $('char').hidden = false;
+}
+
+function hideChar() {
+  charReq++;
+  G.char = null;
+  $('char').hidden = true;
+}
+
+// 말하는 동안 입 모양 프레임 교체
+let talkFrame = false;
+setInterval(() => {
+  const c = G.char;
+  if (!c) return;
+  const talking = !!typing.timer && typing.talker === c.who;
+  talkFrame = talking ? !talkFrame : false;
+  if (c.base) {
+    const want = talkFrame && c.talk ? c.talk : c.base;
+    const img = $('char-img');
+    if (img.getAttribute('src') !== want) img.setAttribute('src', want);
+  }
+  $('char-ph').classList.toggle('talking', talking);
+}, CONFIG.TALK_FRAME_MS);
+
+/* ===================== 사운드 ===================== */
+// audio/bgm/이름.mp3, audio/se/이름.mp3 (파일이 없으면 조용히 무시)
+let bgm = null, bgmName = '';
+function playBgm(name) {
+  if (name === bgmName) return;
+  if (bgm) { bgm.pause(); bgm = null; }
+  bgmName = name;
+  if (!name || name === 'stop') { bgmName = ''; return; }
+  bgm = new Audio(`audio/bgm/${name}.mp3`);
+  bgm.loop = true; bgm.volume = 0.5;
+  bgm.play().catch(() => {});
+}
+function playSe(name) {
+  if (!name) return;
+  const a = new Audio(`audio/se/${name}.mp3`);
+  a.volume = 0.8;
+  a.play().catch(() => {});
+}
+
+/* ===================== 연출 ===================== */
+function shake(big) {
+  const s = $('stage');
+  s.classList.remove('shake', 'shake-big');
+  void s.offsetWidth;
+  s.classList.add(big ? 'shake-big' : 'shake');
+}
+
+function flash(color) {
+  const f = $('flash');
+  f.className = '';
+  void f.offsetWidth;
+  f.className = color === 'red' ? 'red' : 'white';
+}
+
+function showBanner(text, calm, then) {
+  const b = $('banner');
+  b.textContent = text;
+  b.className = calm ? 'calm' : '';
+  b.hidden = false;
+  if (!calm) { shake(true); playSe('objection'); }
+  pause(calm ? 1200 : 1100, () => { b.hidden = true; then(); });
+}
+
+// @title 날짜 / 장소  →  가운데 장소 카드
+function showCard(text) {
+  const c = $('card');
+  c.textContent = text.split('/').map(s => s.trim()).join('\n');
+  c.hidden = false;
+  pause(2000, () => { c.hidden = true; run(); });
+}
+
+function toast(text) {
+  const t = $('toast');
+  t.hidden = true;
+  void t.offsetWidth;
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { t.hidden = true; }, 2200);
+}
+
+/* ===================== 선택지 ===================== */
+// @choice 보기1=대상 | 보기2=대상
+function showChoices(arg) {
+  G.choosing = true;
+  const box = $('choices');
+  box.innerHTML = '';
+  for (const part of arg.split('|')) {
+    const e = part.lastIndexOf('=');
+    if (e < 0) continue;
+    const label = part.slice(0, e).trim(), target = part.slice(e + 1).trim();
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.onclick = ev => {
+      ev.stopPropagation();
+      box.innerHTML = '';
+      G.choosing = false;
+      jump(target);
+    };
+    box.appendChild(btn);
+  }
+}
+
+/* ===================== 증거 / HP ===================== */
+// @evidence add 아이디 이름 | 설명   /   @evidence remove 아이디
+function evidenceCmd(arg) {
+  const m = arg.match(/^(\w+)\s+(\S+)\s*(.*)$/);
+  if (!m) { console.warn('잘못된 @evidence:', arg); return; }
+  const [, sub, id, rest] = m;
+  if (sub === 'add') {
+    const [name, ...desc] = rest.split('|').map(s => s.trim());
+    if (!G.evidence.some(e => e.id === id)) {
+      G.evidence.push({ id, name: name || id, desc: desc.join(' | ') });
+      toast(`법정기록에 추가: ${name || id}`);
+      playSe('get');
+    }
+  } else if (sub === 'remove') {
+    G.evidence = G.evidence.filter(e => e.id !== id);
+  }
+}
+
+// @hp show | hide | reset
+function hpCmd(arg) {
+  if (arg === 'show') G.hpVisible = true;
+  else if (arg === 'hide') G.hpVisible = false;
+  else if (arg === 'reset') G.hp = CONFIG.MAX_HP;
+  renderHp();
+}
+
+function renderHp() {
+  const el = $('hp');
+  el.hidden = !G.hpVisible;
+  el.innerHTML = '';
+  for (let i = 0; i < CONFIG.MAX_HP; i++) {
+    const s = document.createElement('span');
+    if (i >= G.hp) s.className = 'lost';
+    el.appendChild(s);
+  }
+}
+
+function penalty(n) {
+  G.hp = Math.max(0, G.hp - n);
+  G.hpVisible = true;
+  renderHp();
+  flash('red'); shake(true); playSe('damage');
+  if (G.hp <= 0) {
+    leaveCross(false);
+    G.stack = []; G.presentReq = null;
+    pause(900, () => jump(CONFIG.GAMEOVER_SCENE));
+    return true;
+  }
+  return false;
+}
+
+/* ===================== 법정기록 창 ===================== */
+let evMode = 'view', evSelected = null;   // view | present | force
+
+function openEvidence(mode) {
+  if (!$('title-screen').hidden) return;
+  if (typing.timer) finishTyping();
+  evMode = mode;
+  if (!G.evidence.some(e => e.id === evSelected)) evSelected = G.evidence[0]?.id ?? null;
+  $('ev-heading').textContent = mode === 'view' ? '법정기록' : '제시할 증거를 고르세요';
+  $('ev-present').hidden = mode === 'view';
+  $('ev-close').hidden = mode === 'force';
+  renderEvidence();
+  $('evidence-modal').hidden = false;
+}
+
+function closeEvidence() {
+  if (evMode === 'force') return;
+  $('evidence-modal').hidden = true;
+}
+
+function renderEvidence() {
+  const list = $('ev-list');
+  list.innerHTML = '';
+  if (!G.evidence.length) list.innerHTML = '<li class="empty">아직 증거가 없습니다.</li>';
+  for (const e of G.evidence) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.textContent = e.name;
+    b.className = e.id === evSelected ? 'selected' : '';
+    b.onclick = () => { evSelected = e.id; renderEvidence(); };
+    li.appendChild(b);
+    list.appendChild(li);
+  }
+  const e = G.evidence.find(x => x.id === evSelected);
+  const pic = $('ev-pic');
+  $('ev-name').textContent = e ? e.name : '';
+  $('ev-desc').textContent = e ? e.desc : '';
+  $('ev-present').disabled = !e;
+  pic.style.backgroundImage = ''; pic.textContent = '';
+  if (e) {
+    const url = `img/evidence/${e.id}.png`;
+    pic.textContent = e.name[0];
+    imageExists(url).then(ok => {
+      if (ok && evSelected === e.id) { pic.textContent = ''; pic.style.backgroundImage = `url("${url}")`; }
+    });
+  }
+}
+
+function presentChosen() {
+  const id = evSelected;
+  if (!id) return;
+  $('evidence-modal').hidden = true;
+  evMode = 'view';
+
+  // @present 로 요청된 경우
+  if (G.presentReq) {
+    const r = G.presentReq;
+    G.presentReq = null;
+    if (r.map[id]) { jump(absTarget(r.map[id], r.scene)); return; }
+    if (r.wrong) {
+      G.stack.push({ type: 'line', scene: r.scene, idx: r.idx });
+      jump(absTarget(r.wrong, r.scene));
+    } else {
+      G.presentReq = r;
+      openEvidence('force');
+    }
+    return;
+  }
+
+  // 반대신문 중 제시
+  if (G.crossActive) {
+    const c = G.cross, st = c.statements[c.i];
+    if (st.present[id]) {
+      leaveCross(false);
+      jump(absTarget(st.present[id], c.scene));
+    } else if (c.wrong) {
+      leaveCross(true);
+      G.stack.push({ type: 'cross' });
+      jump(absTarget(c.wrong, c.scene));
+    }
+  }
+}
+
+// @present 증거=#라벨 | 증거2=#라벨 | wrong=#라벨
+function askPresent(arg) {
+  const map = {};
+  let wrong = null;
+  for (const part of arg.split('|')) {
+    const e = part.indexOf('=');
+    if (e < 0) continue;
+    const k = part.slice(0, e).trim(), v = part.slice(e + 1).trim();
+    if (k === 'wrong') wrong = v; else map[k] = v;
+  }
+  G.presentReq = { map, wrong, idx: G.idx - 1, scene: G.scene };
+  openEvidence('force');
+}
+
+/* ===================== 반대신문 ===================== */
+// @cross 증언 제목 | wrong=#라벨
+//   증인: 증언 [press=#라벨] [present=증거:#라벨]
+// @endcross
+function startCross(arg) {
+  const parts = arg.split('|').map(s => s.trim());
+  let wrong = null;
+  for (const p of parts.slice(1)) {
+    const e = p.indexOf('=');
+    if (e > 0 && p.slice(0, e).trim() === 'wrong') wrong = p.slice(e + 1).trim();
+  }
+  const statements = [];
+  while (G.idx < G.lines.length) {
+    const l = G.lines[G.idx++];
+    if (l.type === 'cmd' && l.cmd === 'endcross') break;
+    if (l.type === 'say') statements.push(l);
+  }
+  if (!statements.length) { showError(`${G.scene}.txt: @cross 안에 증언이 없습니다.`); return; }
+
+  G.cross = { title: parts[0] || '증언', wrong, statements, i: -1, scene: G.scene };
+  showBanner('반대신문 개시', true, () => {
+    G.crossActive = true;
+    crossStep(1);
+  });
+}
+
+function crossStep(d) {
+  const c = G.cross;
+  let i = c.i + d;
+  if (i >= c.statements.length) i = 0;   // 마지막 증언 다음 → 처음으로
+  if (i < 0) i = 0;
+  c.i = i;
+  renderCrossUI();
+  say(c.statements[i], true);
+}
+
+function renderCrossUI() {
+  const c = G.cross;
+  $('cross-bar').hidden = false;
+  $('testimony-title').hidden = false;
+  $('testimony-title').textContent = `〈 ${c.title} 〉 ${c.i + 1} / ${c.statements.length}`;
+  $('cross-prev').disabled = c.i === 0;
+  $('cross-press').disabled = !c.statements[c.i].press;
+}
+
+function leaveCross(suspend) {
+  G.crossActive = false;
+  if (!suspend) G.cross = null;
+  $('cross-bar').hidden = true;
+  $('testimony-title').hidden = true;
+}
+
+function crossPress() {
+  if (!G.crossActive || G.busy || G.loading) return;
+  if (typing.timer) finishTyping();
+  const c = G.cross, st = c.statements[c.i];
+  if (!st.press) return;
+  leaveCross(true);
+  G.stack.push({ type: 'cross' });
+  jump(absTarget(st.press, c.scene));
+}
+
+function doReturn() {
+  const r = G.stack.pop();
+  if (!r) { showError(`${G.scene}.txt: 돌아갈 곳이 없는데 @return 이 실행되었습니다.`); return; }
+  if (r.type === 'cross' && G.cross) {
+    G.crossActive = true;
+    crossStep(1);
+  } else if (r.type === 'line') {
+    G.loading = true;
+    fetchScene(r.scene).then(data => {
+      G.scene = r.scene; G.lines = data.lines; G.labels = data.labels; G.idx = r.idx;
+      G.loading = false;
+      run();
+    });
+  }
+}
+
+/* ===================== 대사기록 ===================== */
+function openLog() {
+  if (!$('title-screen').hidden) return;
+  const list = $('log-list');
+  list.innerHTML = '';
+  for (const l of G.log) {
+    const li = document.createElement('li');
+    if (l.who) { const b = document.createElement('b'); b.textContent = l.who; li.appendChild(b); }
+    li.appendChild(document.createTextNode(l.text));
+    list.appendChild(li);
+  }
+  $('log-modal').hidden = false;
+  list.scrollTop = list.scrollHeight;
+}
+
+const modalOpen = () => !$('evidence-modal').hidden || !$('log-modal').hidden;
+
+/* ===================== 저장 / 타이틀 ===================== */
+function autosave(target) {
+  if (CONFIG.NO_SAVE_SCENES.includes(G.scene)) return;
+  try {
+    localStorage.setItem(CONFIG.SAVE_KEY, JSON.stringify({
+      target, evidence: G.evidence, hp: G.hp, hpVisible: G.hpVisible,
+    }));
+  } catch (e) { /* 저장 불가 환경 */ }
+}
+
+function loadSave() {
+  try { return JSON.parse(localStorage.getItem(CONFIG.SAVE_KEY)); } catch (e) { return null; }
+}
+
+function clearScreen() {
+  clearInterval(typing.timer); typing.timer = null;
+  playBgm('stop');
+  hideChar();
+  setBg('none');
+  leaveCross(false);
+  $('choices').innerHTML = '';
+  $('name').textContent = ''; $('line').textContent = '';
+  $('next-mark').hidden = true;
+  $('evidence-modal').hidden = true; $('log-modal').hidden = true;
+  $('banner').hidden = true; $('card').hidden = true;
+  $('error').hidden = true;
+}
+
+function showTitle() {
+  clearScreen();
+  resetState();
+  renderHp();
+  $('btn-continue').disabled = !loadSave();
+  $('title-screen').hidden = false;
+}
+
+function startGame(save) {
+  clearScreen();
+  resetState();
+  if (save) {
+    G.evidence = save.evidence || [];
+    G.hp = save.hp ?? CONFIG.MAX_HP;
+    G.hpVisible = !!save.hpVisible;
+  }
+  renderHp();
+  $('title-screen').hidden = true;
+  jump(save ? save.target : CONFIG.START_SCENE);
+}
+
+function endGame(text) {
+  leaveCross(false);
+  $('name').textContent = '';
+  $('line').className = '';
+  startTyping(text || '— 끝 —', null);
+  G.ended = true;
+}
+
+function showError(msg) {
+  if (location.protocol === 'file:') {
+    msg += '\n\nindex.html 을 더블클릭해서 열면 대사 파일을 읽을 수 없습니다.\n'
+         + 'VS Code의 Live Server(Go Live) 또는 로컬 서버로 열어 주세요.';
+  }
+  $('error').textContent = msg;
+  $('error').hidden = false;
+  console.error(msg);
+}
+
+/* ===================== 입력 ===================== */
+$('box').addEventListener('click', next);
+$('btn-new').onclick = () => startGame(null);
+$('btn-continue').onclick = () => { const s = loadSave(); if (s) startGame(s); };
+$('btn-evidence').onclick = () => openEvidence(G.crossActive ? 'present' : 'view');
+$('btn-log').onclick = openLog;
+$('ev-close').onclick = closeEvidence;
+$('ev-present').onclick = presentChosen;
+$('log-close').onclick = () => { $('log-modal').hidden = true; };
+$('cross-prev').onclick = () => { if (G.crossActive && !G.busy) crossStep(-1); };
+$('cross-next').onclick = () => { if (G.crossActive && !G.busy) { if (typing.timer) finishTyping(); crossStep(1); } };
+$('cross-press').onclick = crossPress;
+$('cross-present').onclick = () => { if (G.crossActive && !G.busy) openEvidence('present'); };
+
+document.addEventListener('keydown', e => {
+  if (!$('title-screen').hidden) return;
+  if (modalOpen()) {
+    if (e.key === 'Escape') { closeEvidence(); $('log-modal').hidden = true; }
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if (k === ' ' || k === 'enter') { e.preventDefault(); next(); }
+  else if (k === 'arrowright' && G.crossActive) $('cross-next').click();
+  else if (k === 'arrowleft' && G.crossActive) $('cross-prev').click();
+  else if (k === 'e') $('btn-evidence').click();
+  else if (k === 'l') openLog();
+});
+
+showTitle();
