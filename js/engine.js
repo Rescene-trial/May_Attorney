@@ -14,7 +14,7 @@ const CONFIG = {
   PUNCT_PAUSE: {                // 문장부호 뒤에서 잠깐 쉼(ms) → 말하는 리듬
     ',': 120, '~': 120, '.': 260, '!': 260, '?': 260, '…': 320,
   },
-  MOUTH_MS: 90,                 // 입 모양을 바꾸는 간격(ms)
+  MOUTH_MS: 100,                 // 입 모양을 바꾸는 간격(ms)
   MAX_TALK_FRAMES: 3,           // _talk1 ~ _talk3 까지 찾음
   BLINK_MIN_MS: 2200,           // 눈 깜빡임 간격(ms, 이 사이에서 무작위)
   BLINK_MAX_MS: 5500,
