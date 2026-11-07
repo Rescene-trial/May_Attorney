@@ -28,6 +28,11 @@ button:disabled { opacity: .4; cursor: default; }
   position: absolute; left: 50%; bottom: 168px; transform: translateX(-50%);
   display: flex; align-items: flex-end; pointer-events: none;
 }
+#char.enter { animation: char-in .2s ease-out; }
+@keyframes char-in { from { opacity: 0; transform: translate(-50%, 10px); } }
+/* 가만히 있을 때 미세한 숨쉬기 */
+#char-img, #char-ph { transform-origin: 50% 100%; animation: breathe 4s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scaleY(1.008); } }
 #char-img { display: block; max-height: 62vh; max-width: 90vw; }
 #char-ph {
   --c: #557;
@@ -39,9 +44,14 @@ button:disabled { opacity: .4; cursor: default; }
 }
 .ph-name { font-size: 24px; font-weight: bold; }
 .ph-face { font-size: 14px; opacity: .85; }
-.ph-mouth { width: 42px; height: 6px; margin-top: 16px; border-radius: 8px; background: #fff; }
-#char-ph.talking .ph-mouth { animation: mouth .2s infinite alternate; }
-@keyframes mouth { to { height: 18px; } }
+.ph-eyes { display: flex; gap: 26px; height: 16px; align-items: center; margin-bottom: 10px; }
+.ph-eyes i { width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: height .03s; }
+#char-ph[data-eye="1"] .ph-eyes i { height: 6px; }
+#char-ph[data-eye="2"] .ph-eyes i { height: 2px; }
+.ph-mouth { width: 42px; height: 5px; margin-top: 16px; border-radius: 8px; background: #fff; }
+#char-ph[data-mouth="1"] .ph-mouth { height: 10px; width: 34px; }
+#char-ph[data-mouth="2"] .ph-mouth { height: 18px; width: 40px; }
+#char-ph[data-mouth="3"] .ph-mouth { height: 14px; width: 26px; border-radius: 50%; }
 
 /* ===== 상단 UI ===== */
 #hud {

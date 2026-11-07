@@ -11,7 +11,13 @@ const CONFIG = {
   GAMEOVER_SCENE: 'gameover',   // HP가 0이 되면 가는 장면
   NO_SAVE_SCENES: ['gameover'], // 자동 저장하지 않는 장면
   TYPE_SPEED: 30,               // 글자 출력 속도(ms)
-  TALK_FRAME_MS: 120,           // 입 움직임 프레임 간격(ms)
+  PUNCT_PAUSE: {                // 문장부호 뒤에서 잠깐 쉼(ms) → 말하는 리듬
+    ',': 120, '~': 120, '.': 260, '!': 260, '?': 260, '…': 320,
+  },
+  MOUTH_MS: 90,                 // 입 모양을 바꾸는 간격(ms)
+  MAX_TALK_FRAMES: 3,           // _talk1 ~ _talk3 까지 찾음
+  BLINK_MIN_MS: 2200,           // 눈 깜빡임 간격(ms, 이 사이에서 무작위)
+  BLINK_MAX_MS: 5500,
   MAX_HP: 5,                    // 재판 신뢰도
   PLAYER: '메이',                // 플레이어 캐릭터 (@player hide 상태에선 그림을 띄우지 않음)
   SAVE_KEY: 'may_attorney_save_v1',
@@ -200,19 +206,27 @@ function say(l, testimony = false) {
 }
 
 function startTyping(text, talker) {
-  clearInterval(typing.timer);
-  Object.assign(typing, { full: text, i: 0, talker });
+  clearTimeout(typing.timer);
+  Object.assign(typing, { full: text, i: 0, talker, voiced: false });
   $('line').textContent = '';
   $('next-mark').hidden = true;
   if (!text) { finishTyping(); return; }
-  typing.timer = setInterval(() => {
-    $('line').textContent = text.slice(0, ++typing.i);
-    if (typing.i >= text.length) finishTyping();
-  }, CONFIG.TYPE_SPEED);
+  typing.timer = setTimeout(typeNext, CONFIG.TYPE_SPEED);
+}
+
+function typeNext() {
+  const ch = typing.full[typing.i++];
+  $('line').textContent = typing.full.slice(0, typing.i);
+  if (/[\p{L}\p{N}]/u.test(ch)) typing.voiced = true;   // 소리 나는 글자 → 입을 열 신호
+  if (typing.i >= typing.full.length) { finishTyping(); return; }
+  // 문장부호 뒤에선 쉼. "..." 처럼 이어지면 마지막 부호 뒤에서만 쉼
+  const pause = CONFIG.PUNCT_PAUSE[ch];
+  const nextIsPunct = typing.full[typing.i] in CONFIG.PUNCT_PAUSE;
+  typing.timer = setTimeout(typeNext, pause && !nextIsPunct ? pause : CONFIG.TYPE_SPEED);
 }
 
 function finishTyping() {
-  clearInterval(typing.timer);
+  clearTimeout(typing.timer);
   typing.timer = null;
   $('line').textContent = typing.full;
   $('next-mark').hidden = G.crossActive;
@@ -258,21 +272,35 @@ async function setBg(name) {
   }
 }
 
-// 캐릭터: img/char/이름_표정.png  (말하는 프레임: 이름_표정_talk.png)
+// 캐릭터: img/char/이름_표정.png
+//   말하는 입 모양 (선택): 이름_표정_talk.png  또는  이름_표정_talk1.png, _talk2.png, _talk3.png
+//   눈 깜빡임 (선택):     이름_표정_blink.png (감은 눈),  이름_표정_blink_half.png (반쯤 감은 눈)
 // 이미지가 없으면 이름/표정이 적힌 임시 실루엣을 보여줌
 let charReq = 0;
 async function showChar(who, face) {
   if (G.char && G.char.who === who && G.char.face === face && !$('char').hidden) return;
   const req = ++charReq;
-  const base = `img/char/${who}_${face}.png`;
-  const talk = `img/char/${who}_${face}_talk.png`;
-  const [hasBase, hasTalk] = await Promise.all([imageExists(base), imageExists(talk)]);
+  const pre = `img/char/${who}_${face}`;
+  const talkUrls = [`${pre}_talk.png`];
+  for (let i = 1; i <= CONFIG.MAX_TALK_FRAMES; i++) talkUrls.push(`${pre}_talk${i}.png`);
+  const urls = [`${pre}.png`, `${pre}_blink.png`, `${pre}_blink_half.png`, ...talkUrls];
+  const ok = await Promise.all(urls.map(imageExists));
   if (req !== charReq) return;
 
-  G.char = { who, face, base: hasBase ? base : null, talk: hasBase && hasTalk ? talk : null };
-  const img = $('char-img'), ph = $('char-ph');
+  const hasBase = ok[0];
+  const prevWho = G.char && !$('char').hidden ? G.char.who : null;
+  G.char = {
+    who, face,
+    base: hasBase ? urls[0] : null,
+    blink: hasBase && ok[1] ? urls[1] : null,
+    blinkHalf: hasBase && ok[2] ? urls[2] : null,
+    talk: hasBase ? talkUrls.filter((u, i) => ok[3 + i]) : [],
+  };
+  anim.mouth = 0; anim.eye = 0;
+
+  const el = $('char'), img = $('char-img'), ph = $('char-ph');
   if (hasBase) {
-    img.setAttribute('src', base);
+    img.setAttribute('src', G.char.base);
     img.hidden = false; ph.hidden = true;
   } else {
     img.hidden = true; ph.hidden = false;
@@ -280,7 +308,14 @@ async function showChar(who, face) {
     ph.querySelector('.ph-face').textContent = face;
     ph.style.setProperty('--c', `hsl(${hue(who)}, 45%, 42%)`);
   }
-  $('char').hidden = false;
+  el.hidden = false;
+  // 다른 캐릭터로 바뀔 때만 살짝 페이드인 (표정만 바뀔 땐 그대로)
+  if (prevWho !== who) {
+    el.classList.remove('enter');
+    void el.offsetWidth;
+    el.classList.add('enter');
+  }
+  renderChar();
 }
 
 // @player show : 플레이어도 화면에 나옴 (법정)
@@ -293,23 +328,70 @@ function playerCmd(arg) {
 function hideChar() {
   charReq++;
   G.char = null;
+  anim.mouth = 0; anim.eye = 0;
   $('char').hidden = true;
 }
 
-// 말하는 동안 입 모양 프레임 교체
-let talkFrame = false;
+/* ----- 입 / 눈 애니메이션 ----- */
+// mouth: 0 = 다문 입, 1~N = 입 모양 번호 / eye: 0 = 뜬 눈, 1 = 반쯤 감음, 2 = 감음
+const anim = { mouth: 0, eye: 0 };
+const PH_MOUTH_FRAMES = 3;   // 임시 실루엣의 입 모양 수
+
+function renderChar() {
+  const c = G.char;
+  if (!c) return;
+  if (c.base) {
+    let want = c.base;
+    if (anim.mouth > 0 && c.talk.length) want = c.talk[(anim.mouth - 1) % c.talk.length];
+    else if (anim.eye === 2 && c.blink) want = c.blink;
+    else if (anim.eye === 1 && c.blinkHalf) want = c.blinkHalf;
+    const img = $('char-img');
+    if (img.getAttribute('src') !== want) img.setAttribute('src', want);
+  } else {
+    const ph = $('char-ph');
+    ph.dataset.mouth = anim.mouth;
+    ph.dataset.eye = anim.eye;
+  }
+}
+
+// 말하는 동안: 글자가 나온 순간에만 입을 열고, 매번 다른 입 모양을 무작위로 고름.
+// 띄어쓰기·문장부호에서 쉬는 동안엔 자연스럽게 입이 닫힘.
 setInterval(() => {
   const c = G.char;
   if (!c) return;
-  const talking = !!typing.timer && typing.talker === c.who;
-  talkFrame = talking ? !talkFrame : false;
-  if (c.base) {
-    const want = talkFrame && c.talk ? c.talk : c.base;
-    const img = $('char-img');
-    if (img.getAttribute('src') !== want) img.setAttribute('src', want);
+  const talking = !!typing.timer && typing.talker === c.who && typing.voiced;
+  typing.voiced = false;
+  const frames = c.base ? c.talk.length : PH_MOUTH_FRAMES;
+  if (!talking || !frames) {
+    anim.mouth = 0;
+  } else if (anim.mouth > 0 && Math.random() < (frames === 1 ? 0.7 : 0.3)) {
+    anim.mouth = 0;                                  // 가끔 입을 다물어 리듬을 줌
+  } else {
+    let m;
+    do { m = 1 + Math.floor(Math.random() * frames); } while (frames > 1 && m === anim.mouth);
+    anim.mouth = m;
   }
-  $('char-ph').classList.toggle('talking', talking);
-}, CONFIG.TALK_FRAME_MS);
+  renderChar();
+}, CONFIG.MOUTH_MS);
+
+// 눈 깜빡임: 무작위 간격, 가끔 두 번 연속
+const wait = ms => new Promise(r => setTimeout(r, ms));
+async function setEye(e, ms) { anim.eye = e; renderChar(); if (ms) await wait(ms); }
+async function blinkLoop() {
+  for (;;) {
+    await wait(CONFIG.BLINK_MIN_MS + Math.random() * (CONFIG.BLINK_MAX_MS - CONFIG.BLINK_MIN_MS));
+    const c = G.char;
+    if (!c || (c.base && !c.blink)) continue;
+    const times = Math.random() < 0.2 ? 2 : 1;
+    for (let k = 0; k < times; k++) {
+      await setEye(1, 40);
+      await setEye(2, 90);
+      await setEye(1, 40);
+      await setEye(0, times > 1 ? 140 : 0);
+    }
+  }
+}
+blinkLoop();
 
 /* ===================== 사운드 ===================== */
 // audio/bgm/이름.mp3, audio/se/이름.mp3 (파일이 없으면 조용히 무시)
@@ -652,7 +734,7 @@ function loadSave() {
 }
 
 function clearScreen() {
-  clearInterval(typing.timer); typing.timer = null;
+  clearTimeout(typing.timer); typing.timer = null;
   playBgm('stop');
   hideChar();
   setBg('none');
