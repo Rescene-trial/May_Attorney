@@ -85,6 +85,7 @@ python -m http.server 8000
 |---|---|
 | `@bg office` | 배경 변경 → `img/bg/office.png` (`@bg none`: 검은 화면). 장소가 바뀌므로 캐릭터도 지워짐 |
 | `@player hide` / `@player show` | 플레이어 시점 / 법정 모드 (아래 설명) |
+| `@chars hide` / `@chars show` | 상황 설명 모드: 배경만 보이고 모든 캐릭터 그림 숨김 / 다시 보이기 (아래 설명) |
 | `@show 김만수\|normal` / `@hide` | 대사 없이 캐릭터 표시 / 숨기기 |
 | `@title 5월 7일 / 지방법원` | 날짜·장소 카드 (`/`는 줄바꿈) |
 | `@bgm trial` / `@bgm stop` | 배경음악 재생 / 정지 → `audio/bgm/trial.mp3` |
@@ -109,6 +110,25 @@ python -m http.server 8000
   **대화 상대의 그림이 그대로 유지**되어 플레이어가 직접 상대와 대화하는 느낌을 줍니다.
 - 법정에서는 `@player show` 로 바꿔서 메이도 화면에 나오게 합니다. (`scene04_trial.txt` 참고)
 - 플레이어 캐릭터 이름은 `js/engine.js` 의 `CONFIG.PLAYER` 에서 바꿀 수 있습니다.
+
+### 상황 설명 장면 (배경만 보여주기)
+
+배경 그림으로 상황을 보여주는 장면에서는 `@chars hide` 를 씁니다.
+대사의 이름 칸은 그대로 나오지만 캐릭터 그림은 나오지 않습니다. 끝나면 `@chars show` 로 되돌립니다.
+
+```
+@chars hide
+@bg night_hallway                   ← img/bg/night_hallway.png
+: 5월 3일 밤 11시. 한빛아파트 3층 복도.
+: 정전으로 복도는 칠흑같이 어두웠다.
+김만수: (어라, 누가 302호에서 나오는데...)    ← 이름만 나오고 그림은 안 나옴
+@chars show
+@bg court
+재판장: 증인, 계속하세요.                     ← 다시 그림이 나옴
+```
+
+- `@chars hide` 중에도 `@show 이름|표정` 으로 직접 띄우는 건 됩니다.
+- 장면이 바뀌어도 `@chars show` 를 쓰기 전까지 계속 숨김 상태이니, 설명이 끝나면 꼭 되돌려 주세요.
 
 ### 반대신문
 

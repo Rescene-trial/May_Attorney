@@ -33,6 +33,7 @@ function resetState() {
     evidence: [],            // { id, name, desc }
     hp: CONFIG.MAX_HP, hpVisible: false,
     playerVisible: false,    // false: 플레이어 시점 (메이 그림 안 보임)
+    charsVisible: true,      // false: 상황 설명 장면 (누가 말해도 캐릭터 그림 안 보임)
     stack: [],               // @return 으로 돌아갈 지점
     cross: null,             // 반대신문 상태
     crossActive: false,
@@ -159,6 +160,7 @@ function exec({ cmd, arg }) {
   switch (cmd) {
     case 'bg':        hideChar(); setBg(arg); return false;   // 장소가 바뀌면 캐릭터도 지움
     case 'player':    playerCmd(arg); return false;
+    case 'chars':     charsCmd(arg); return false;
     case 'show': {
       const [who, face] = arg.split('|').map(s => s.trim());
       showChar(who, face || 'normal');
@@ -201,7 +203,7 @@ function say(l, testimony = false) {
   $('line').className = testimony ? 'testimony' : thought ? 'thought' : '';
   // 플레이어 시점일 때 메이가 말하면 그림을 바꾸지 않고 대화 상대를 그대로 보여줌
   const hidePlayer = l.who === CONFIG.PLAYER && !G.playerVisible;
-  if (l.who && !hidePlayer) showChar(l.who, l.face);
+  if (l.who && !hidePlayer && G.charsVisible) showChar(l.who, l.face);
   startTyping(l.text, l.who && !thought ? l.who : null);
   G.log.push({ who: l.who, text: l.text });
   if (G.log.length > 500) G.log.shift();
@@ -325,6 +327,13 @@ async function showChar(who, face) {
 function playerCmd(arg) {
   G.playerVisible = arg === 'show';
   if (!G.playerVisible && G.char && G.char.who === CONFIG.PLAYER) hideChar();
+}
+
+// @chars hide : 상황 설명 장면 - 배경만 보이고, 누가 말해도 캐릭터 그림을 띄우지 않음
+// @chars show : 다시 말하는 캐릭터를 보여줌 (@show 로 직접 띄우는 건 hide 중에도 가능)
+function charsCmd(arg) {
+  G.charsVisible = arg !== 'hide';
+  if (!G.charsVisible) hideChar();
 }
 
 function hideChar() {
@@ -742,6 +751,7 @@ function autosave(target) {
   try {
     localStorage.setItem(CONFIG.SAVE_KEY, JSON.stringify({
       target, evidence: G.evidence, hp: G.hp, hpVisible: G.hpVisible, playerVisible: G.playerVisible,
+      charsVisible: G.charsVisible,
     }));
   } catch (e) { /* 저장 불가 환경 */ }
 }
@@ -780,6 +790,7 @@ function startGame(save) {
     G.hp = save.hp ?? CONFIG.MAX_HP;
     G.hpVisible = !!save.hpVisible;
     G.playerVisible = !!save.playerVisible;
+    G.charsVisible = save.charsVisible !== false;
   }
   renderHp();
   $('title-screen').hidden = true;
