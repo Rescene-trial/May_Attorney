@@ -85,8 +85,6 @@ python -m http.server 8000
 |---|---|
 | `@bg office` | 배경 변경 → `img/bg/office.png` (`@bg none`: 검은 화면). 장소가 바뀌므로 캐릭터도 지워짐 |
 | `@player hide` / `@player show` | 플레이어 시점 / 법정 모드 (아래 설명) |
-| `@chars hide` / `@chars show` | 상황 설명 모드: 배경만 보이고 모든 캐릭터 그림 숨김 / 다시 보이기 (아래 설명) |
-| `@chars hide 이수아` / `@chars show 이수아` | 그 캐릭터만 그림 숨김 / 다시 보이기 (쉼표로 여러 명: `@chars hide 이수아, 김만수`) |
 | `@show 김만수\|normal` / `@hide` | 대사 없이 캐릭터 표시 / 숨기기 |
 | `@title 5월 7일 / 지방법원` | 날짜·장소 카드 (`/`는 줄바꿈) |
 | `@bgm trial` / `@bgm stop` | 배경음악 재생 / 정지 → `audio/bgm/trial.mp3` |
@@ -111,28 +109,6 @@ python -m http.server 8000
   **대화 상대의 그림이 그대로 유지**되어 플레이어가 직접 상대와 대화하는 느낌을 줍니다.
 - 법정에서는 `@player show` 로 바꿔서 메이도 화면에 나오게 합니다. (`scene04_trial.txt` 참고)
 - 플레이어 캐릭터 이름은 `js/engine.js` 의 `CONFIG.PLAYER` 에서 바꿀 수 있습니다.
-
-### 상황 설명 장면 (배경만 보여주기)
-
-배경 그림으로 상황을 보여주는 장면에서는 `@chars hide` 를 씁니다.
-대사의 이름 칸은 그대로 나오지만 캐릭터 그림은 나오지 않습니다. 끝나면 `@chars show` 로 되돌립니다.
-
-```
-@chars hide
-@bg night_hallway                   ← img/bg/night_hallway.png
-: 5월 3일 밤 11시. 한빛아파트 3층 복도.
-: 정전으로 복도는 칠흑같이 어두웠다.
-김만수: (어라, 누가 302호에서 나오는데...)    ← 이름만 나오고 그림은 안 나옴
-@chars show
-@bg court
-재판장: 증인, 계속하세요.                     ← 다시 그림이 나옴
-```
-
-- 특정 캐릭터만 숨기려면 `@chars hide 이수아` 처럼 이름을 붙입니다. 정체를 숨긴 목소리 같은 연출에 씁니다.
-  `@chars show 이수아` 로 그 캐릭터만 되돌리고, 이름 없이 `@chars show` 를 쓰면 전부 되돌아갑니다.
-- 명령어에는 항상 `@명령어` 가 먼저 옵니다. `@이수아 hide` 처럼 이름 앞에 `@` 를 붙이면 알 수 없는 명령어가 됩니다.
-- `@chars hide` 중에도 `@show 이름|표정` 으로 직접 띄우는 건 됩니다.
-- 장면이 바뀌어도 `@chars show` 를 쓰기 전까지 계속 숨김 상태이니, 설명이 끝나면 꼭 되돌려 주세요.
 
 ### 반대신문
 
@@ -176,9 +152,7 @@ python -m http.server 8000
 - 입은 글자가 나올 때만 움직이고, 띄어쓰기·문장부호(`, . ! ? …`)에서 쉬는 동안엔 닫힙니다.
   입 모양은 매번 무작위로 골라서 기계적인 반복처럼 보이지 않게 합니다.
 - 눈은 2~5.5초마다 무작위로 깜빡이고, 가끔 두 번 연속 깜빡입니다.
-- 말하는 동안 고개가 살짝 끄덕이고 기울어지며, 문장부호에서 쉴 때 제자리로 돌아옵니다.
-- 속도와 간격은 `js/engine.js` 의 `CONFIG` (`TYPE_SPEED`, `PUNCT_PAUSE`, `MOUTH_MS`, `BLINK_MIN_MS`, `BLINK_MAX_MS`)에서,
-  고개 움직임 크기는 `TALK_BOB_PX`(위아래 px), `TALK_TILT_DEG`(기울기 각도)에서 조절합니다. 0으로 하면 꺼집니다.
+- 속도와 간격은 `js/engine.js` 의 `CONFIG` (`TYPE_SPEED`, `PUNCT_PAUSE`, `MOUTH_MS`, `BLINK_MIN_MS`, `BLINK_MAX_MS`)에서 조절합니다.
 
 ## 현재 필요한 이미지 목록
 
