@@ -86,6 +86,7 @@ python -m http.server 8000
 | `@bg office` | 배경 변경 → `img/bg/office.png` (`@bg none`: 검은 화면). 장소가 바뀌므로 캐릭터도 지워짐 |
 | `@player hide` / `@player show` | 플레이어 시점 / 법정 모드 (아래 설명) |
 | `@chars hide` / `@chars show` | 상황 설명 모드: 배경만 보이고 모든 캐릭터 그림 숨김 / 다시 보이기 (아래 설명) |
+| `@chars hide 이수아` / `@chars show 이수아` | 그 캐릭터만 그림 숨김 / 다시 보이기 (쉼표로 여러 명: `@chars hide 이수아, 김만수`) |
 | `@show 김만수\|normal` / `@hide` | 대사 없이 캐릭터 표시 / 숨기기 |
 | `@title 5월 7일 / 지방법원` | 날짜·장소 카드 (`/`는 줄바꿈) |
 | `@bgm trial` / `@bgm stop` | 배경음악 재생 / 정지 → `audio/bgm/trial.mp3` |
@@ -127,6 +128,9 @@ python -m http.server 8000
 재판장: 증인, 계속하세요.                     ← 다시 그림이 나옴
 ```
 
+- 특정 캐릭터만 숨기려면 `@chars hide 이수아` 처럼 이름을 붙입니다. 정체를 숨긴 목소리 같은 연출에 씁니다.
+  `@chars show 이수아` 로 그 캐릭터만 되돌리고, 이름 없이 `@chars show` 를 쓰면 전부 되돌아갑니다.
+- 명령어에는 항상 `@명령어` 가 먼저 옵니다. `@이수아 hide` 처럼 이름 앞에 `@` 를 붙이면 알 수 없는 명령어가 됩니다.
 - `@chars hide` 중에도 `@show 이름|표정` 으로 직접 띄우는 건 됩니다.
 - 장면이 바뀌어도 `@chars show` 를 쓰기 전까지 계속 숨김 상태이니, 설명이 끝나면 꼭 되돌려 주세요.
 

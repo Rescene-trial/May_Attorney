@@ -34,6 +34,7 @@ function resetState() {
     hp: CONFIG.MAX_HP, hpVisible: false,
     playerVisible: false,    // false: 플레이어 시점 (메이 그림 안 보임)
     charsVisible: true,      // false: 상황 설명 장면 (누가 말해도 캐릭터 그림 안 보임)
+    hiddenChars: [],         // @chars hide 이름 으로 숨긴 캐릭터들
     stack: [],               // @return 으로 돌아갈 지점
     cross: null,             // 반대신문 상태
     crossActive: false,
@@ -186,7 +187,8 @@ function exec({ cmd, arg }) {
     case 'totitle':   showTitle(); return true;
     case 'end':       endGame(arg); return true;
     default:
-      console.warn(`[${G.scene}] 알 수 없는 명령어: @${cmd}`);
+      showError(`${G.scene}.txt: 알 수 없는 명령어 "@${cmd}" (README 의 명령어 표 참고)`);
+      setTimeout(() => { $('error').hidden = true; }, 5000);
       return false;
   }
 }
@@ -203,7 +205,7 @@ function say(l, testimony = false) {
   $('line').className = testimony ? 'testimony' : thought ? 'thought' : '';
   // 플레이어 시점일 때 메이가 말하면 그림을 바꾸지 않고 대화 상대를 그대로 보여줌
   const hidePlayer = l.who === CONFIG.PLAYER && !G.playerVisible;
-  if (l.who && !hidePlayer && G.charsVisible) showChar(l.who, l.face);
+  if (l.who && !hidePlayer && G.charsVisible && !G.hiddenChars.includes(l.who)) showChar(l.who, l.face);
   startTyping(l.text, l.who && !thought ? l.who : null);
   G.log.push({ who: l.who, text: l.text });
   if (G.log.length > 500) G.log.shift();
@@ -329,11 +331,29 @@ function playerCmd(arg) {
   if (!G.playerVisible && G.char && G.char.who === CONFIG.PLAYER) hideChar();
 }
 
-// @chars hide : 상황 설명 장면 - 배경만 보이고, 누가 말해도 캐릭터 그림을 띄우지 않음
-// @chars show : 다시 말하는 캐릭터를 보여줌 (@show 로 직접 띄우는 건 hide 중에도 가능)
+// @chars hide        : 상황 설명 장면 - 배경만 보이고, 누가 말해도 캐릭터 그림을 띄우지 않음
+// @chars show        : 다시 말하는 캐릭터를 보여줌 (숨긴 캐릭터 목록도 모두 해제)
+// @chars hide 이름   : 그 캐릭터만 그림을 숨김 (대사의 이름 칸은 그대로 나옴)
+// @chars show 이름   : 그 캐릭터만 다시 보여줌
+// (@show 로 직접 띄우는 건 숨김 중에도 가능)
 function charsCmd(arg) {
-  G.charsVisible = arg !== 'hide';
-  if (!G.charsVisible) hideChar();
+  const [mode, ...rest] = arg.split(/\s+/);
+  const names = rest.join(' ').split(',').map(s => s.trim()).filter(Boolean);
+  if (mode !== 'hide' && mode !== 'show') {
+    console.warn(`[${G.scene}] @chars 다음에는 hide 또는 show 를 써야 합니다: @chars ${arg}`);
+    return;
+  }
+  if (!names.length) {
+    G.charsVisible = mode === 'show';
+    if (mode === 'show') G.hiddenChars = [];
+    else hideChar();
+    return;
+  }
+  for (const n of names) {
+    G.hiddenChars = G.hiddenChars.filter(x => x !== n);
+    if (mode === 'hide') G.hiddenChars.push(n);
+  }
+  if (mode === 'hide' && G.char && names.includes(G.char.who)) hideChar();
 }
 
 function hideChar() {
@@ -751,7 +771,7 @@ function autosave(target) {
   try {
     localStorage.setItem(CONFIG.SAVE_KEY, JSON.stringify({
       target, evidence: G.evidence, hp: G.hp, hpVisible: G.hpVisible, playerVisible: G.playerVisible,
-      charsVisible: G.charsVisible,
+      charsVisible: G.charsVisible, hiddenChars: G.hiddenChars,
     }));
   } catch (e) { /* 저장 불가 환경 */ }
 }
@@ -791,6 +811,7 @@ function startGame(save) {
     G.hpVisible = !!save.hpVisible;
     G.playerVisible = !!save.playerVisible;
     G.charsVisible = save.charsVisible !== false;
+    G.hiddenChars = save.hiddenChars || [];
   }
   renderHp();
   $('title-screen').hidden = true;
