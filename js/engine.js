@@ -15,6 +15,8 @@ const CONFIG = {
     ',': 120, '~': 120, '.': 260, '!': 260, '?': 260, '…': 320,
   },
   MOUTH_MS: 100,                 // 입 모양을 바꾸는 간격(ms)
+  TALK_BOB_PX: 3,               // 말할 때 고개가 위아래로 움직이는 최대 폭(px)
+  TALK_TILT_DEG: 0.8,           // 말할 때 고개가 기울어지는 최대 각도(도)
   MAX_TALK_FRAMES: 3,           // _talk1 ~ _talk3 까지 찾음
   BLINK_MIN_MS: 2200,           // 눈 깜빡임 간격(ms, 이 사이에서 무작위)
   BLINK_MAX_MS: 5500,
@@ -371,8 +373,23 @@ setInterval(() => {
     do { m = 1 + Math.floor(Math.random() * frames); } while (frames > 1 && m === anim.mouth);
     anim.mouth = m;
   }
+  // 말하는 동안 가끔 고개를 살짝 끄덕이고 기울임. 쉬는 동안엔 제자리로
+  if (talking && Math.random() < 0.35) {
+    setBob(-Math.random() * CONFIG.TALK_BOB_PX, (Math.random() * 2 - 1) * CONFIG.TALK_TILT_DEG);
+  } else if (!talking && bobActive) {
+    setBob(0, 0);
+  }
   renderChar();
 }, CONFIG.MOUTH_MS);
+
+let bobActive = false;
+function setBob(y, deg) {
+  bobActive = y !== 0 || deg !== 0;
+  for (const el of [$('char-img'), $('char-ph')]) {
+    el.style.translate = `0 ${y.toFixed(1)}px`;
+    el.style.rotate = `${deg.toFixed(2)}deg`;
+  }
+}
 
 // 눈 깜빡임: 무작위 간격, 가끔 두 번 연속
 const wait = ms => new Promise(r => setTimeout(r, ms));

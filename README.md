@@ -152,7 +152,9 @@ python -m http.server 8000
 - 입은 글자가 나올 때만 움직이고, 띄어쓰기·문장부호(`, . ! ? …`)에서 쉬는 동안엔 닫힙니다.
   입 모양은 매번 무작위로 골라서 기계적인 반복처럼 보이지 않게 합니다.
 - 눈은 2~5.5초마다 무작위로 깜빡이고, 가끔 두 번 연속 깜빡입니다.
-- 속도와 간격은 `js/engine.js` 의 `CONFIG` (`TYPE_SPEED`, `PUNCT_PAUSE`, `MOUTH_MS`, `BLINK_MIN_MS`, `BLINK_MAX_MS`)에서 조절합니다.
+- 말하는 동안 고개가 살짝 끄덕이고 기울어지며, 문장부호에서 쉴 때 제자리로 돌아옵니다.
+- 속도와 간격은 `js/engine.js` 의 `CONFIG` (`TYPE_SPEED`, `PUNCT_PAUSE`, `MOUTH_MS`, `BLINK_MIN_MS`, `BLINK_MAX_MS`)에서,
+  고개 움직임 크기는 `TALK_BOB_PX`(위아래 px), `TALK_TILT_DEG`(기울기 각도)에서 조절합니다. 0으로 하면 꺼집니다.
 
 ## 현재 필요한 이미지 목록
 

@@ -31,7 +31,10 @@ button:disabled { opacity: .4; cursor: default; }
 #char.enter { animation: char-in .2s ease-out; }
 @keyframes char-in { from { opacity: 0; transform: translate(-50%, 10px); } }
 /* 가만히 있을 때 미세한 숨쉬기 */
-#char-img, #char-ph { transform-origin: 50% 100%; animation: breathe 4s ease-in-out infinite; }
+#char-img, #char-ph {
+  transform-origin: 50% 100%; animation: breathe 4s ease-in-out infinite;
+  transition: translate .18s ease-out, rotate .18s ease-out;   /* 말할 때 고개 움직임 */
+}
 @keyframes breathe { 50% { transform: scaleY(1.008); } }
 #char-img { display: block; max-height: 62vh; max-width: 90vw; }
 #char-ph {
