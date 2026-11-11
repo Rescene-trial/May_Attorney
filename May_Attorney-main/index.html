@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>May Attorney</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="stage">
+  <!-- 배경 / 캐릭터 -->
+  <div id="bg"><span id="bg-label"></span></div>
+  <div id="char" hidden>
+    <img id="char-img" alt="" hidden>
+    <div id="char-ph" hidden>
+      <div class="ph-eyes"><i></i><i></i></div>
+      <div class="ph-name"></div>
+      <div class="ph-face"></div>
+      <div class="ph-mouth"></div>
+    </div>
+  </div>
+  <div id="flash"></div>
+
+  <!-- 상단 UI -->
+  <div id="hud">
+    <div id="hp" hidden></div>
+    <div id="menu">
+      <button id="btn-evidence" title="E">법정기록</button>
+      <button id="btn-log" title="L">대사기록</button>
+    </div>
+  </div>
+  <div id="testimony-title" hidden></div>
+  <div id="toast" hidden></div>
+
+  <!-- 선택지 / 반대신문 -->
+  <div id="choices"></div>
+  <div id="cross-bar" hidden>
+    <button id="cross-prev" title="←">◀</button>
+    <button id="cross-press">추궁하기</button>
+    <button id="cross-present">증거 제시</button>
+    <button id="cross-next" title="→">▶</button>
+  </div>
+
+  <!-- 대사창 -->
+  <div id="box">
+    <div id="name"></div>
+    <div id="line"></div>
+    <div id="next-mark" hidden>▼</div>
+  </div>
+
+  <!-- 연출 -->
+  <div id="banner" hidden></div>
+  <div id="card" hidden></div>
+
+  <!-- 법정기록 -->
+  <div id="evidence-modal" class="modal" hidden>
+    <div class="panel">
+      <h2 id="ev-heading">법정기록</h2>
+      <div class="ev-layout">
+        <ul id="ev-list"></ul>
+        <div id="ev-detail">
+          <div id="ev-pic"></div>
+          <h3 id="ev-name"></h3>
+          <p id="ev-desc"></p>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button id="ev-present" class="primary">제시하기</button>
+        <button id="ev-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 대사기록 -->
+  <div id="log-modal" class="modal" hidden>
+    <div class="panel">
+      <h2>대사기록</h2>
+      <ol id="log-list"></ol>
+      <div class="modal-buttons"><button id="log-close">닫기</button></div>
+    </div>
+  </div>
+
+  <!-- 타이틀 -->
+  <div id="title-screen">
+    <h1>May Attorney</h1>
+    <p class="subtitle">메이 변호사의 첫 번째 재판</p>
+    <div class="title-buttons">
+      <button id="btn-new" class="primary">새 게임</button>
+      <button id="btn-continue">이어하기</button>
+    </div>
+    <p class="hint">클릭 / Space: 진행 · E: 법정기록 · L: 대사기록 · ←→: 증언 이동</p>
+  </div>
+
+  <div id="error" hidden></div>
+</div>
+<script src="js/engine.js"></script>
+</body>
+</html>
